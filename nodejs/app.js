@@ -528,11 +528,11 @@ app.get('/getMaincategories', async (req, res) => {
 //all user
 app.get('/alluser', async (req, res) => {
     try {
-        console.log('Fetching all users...');
+      
 
         const users = await User.find();
 
-        console.log('Users fetched:', users);
+       
 
         if (users.length === 0) {
             return res.status(404).send({ status: 'error', message: 'No users found' });
@@ -544,6 +544,7 @@ app.get('/alluser', async (req, res) => {
         res.status(500).send({ status: 'error', message: 'Internal server error' });
     }
 });
+
 //all vendor
 app.get('/allVendor', async (req, res) => {
   try {
@@ -4886,6 +4887,71 @@ app.delete("/deleteVendor", async (req, res) => {
       res.status(500).send({ status: 'error', message: 'Internal server error' });
   }
 });
+app.get('/filter-users', async (req, res) => {
+  try {
+    const { startDate, endDate, export: exportExcel } = req.query;
+    let query = {};
+
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      // Adjust the end date to include the full day (23:59:59.999)
+      end.setUTCHours(23, 59, 59, 999);
+
+      query.createdAt = {
+        $gte: start,
+        $lte: end
+      };
+    }
+
+    const users = await User.find(query).sort({ createdAt: -1 });
+
+    if (exportExcel === 'excel') {
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Users');
+
+      worksheet.columns = [
+        { header: 'Name', key: 'name' },
+        { header: 'Number', key: 'number' },
+        { header: 'Email', key: 'email' },
+        { header: 'State', key: 'state' },
+        { header: 'Pincode', key: 'pincode' },
+        { header: 'Business Type', key: 'businessType' },
+        { header: 'Created At', key: 'createdAt' }
+      ];
+
+      users.forEach(user => {
+        worksheet.addRow({
+          name: user.name,
+          number: user.number,
+          email: user.email,
+          state: user.state,
+          pincode: user.pincode,
+          businessType: user.businessType,
+          createdAt: new Date(user.createdAt).toLocaleString()
+        });
+      });
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=FilteredUsers.xlsx');
+
+      await workbook.xlsx.write(res);
+      return res.end();
+    }
+
+    return res.status(200).send({
+      status: 'ok',
+      data: users,
+      message: users.length === 0 ? 'No users found.' : undefined
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).send({ status: 'error', message: 'Internal server error' });
+  }
+});
+
 
 
 const PORT = process.env.PORT || 5000;
