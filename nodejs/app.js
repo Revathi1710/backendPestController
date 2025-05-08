@@ -42,7 +42,8 @@ app.use(express.json());
 const corsOptions = {
 origin: [
    
-    'http://localhost:3000','http://localhost:3001','https://builder.myorderz.com','https://gentle-macaron-1326ec.netlify.app'
+    'http://localhost:3000','http://localhost:3001','https://builder.myorderz.com',
+    'https://gentle-macaron-1326ec.netlify.app','https://pestcontrolnearme.in','https://admin.pestcontrolnearme.in/'
 
 
   ],// Ensure this matches your client-side URL
