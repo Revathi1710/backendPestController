@@ -20,6 +20,7 @@ const Slider=require('./models/Slider');
 const Banner=require('./models/Banner');
 const Towerbanner=require('./models/Towerbanner');
 const HorizontalTowerbanner=require('./models/HorizontalTowerbanner');
+const EnquiryClick = require("./models/EnquiryClick");
 
 const Business=require('./models/BusinessProfile');
 const SubCategory=require('./models/SubCategory');
@@ -3579,7 +3580,7 @@ app.get("/enquiryStats", async (req, res) => {
       const enquiryData = await Enquiry.aggregate([
           {
               $group: {
-                  _id: { $month: "$createdAt" },  // Group by month number (1-12)
+                  _id: { $month: "$clickedAt" },  // Group by month number (1-12)
                   totalEnquiries: { $sum: 1 }    // Count total enquiries
               }
           }
@@ -4482,7 +4483,7 @@ app.get('/checkUserByEmail', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-app.post('/VSearchBuyer', async (req, res) => {
+app.post("/VSearchBuyer", async (req, res) => {
   const { name, email, state, pincode, number, businessType, skipUserSave } = req.body;
 
   try {
@@ -4506,26 +4507,30 @@ app.post('/VSearchBuyer', async (req, res) => {
       }
     }
 
-   
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize time for comparison
 
-    // Change from $lt (less than) to $gt (greater than) to find vendors with expiryDate > today
-    const vendors = await Vendor.find({
-        expiryDate: { $gt: today },  // Ensure expiryDate is greater than today
-        approved: true
-    });
+    let query = {
+      expiryDate: { $gt: today },  // Ensure expiryDate is greater than today
+      approved: true,
+    };
+
+    // Add pincode filter for Residential type
+    if (businessType === "Residential") {
+      query.pincode = pincode;
+    }
+
+    const vendors = await Vendor.find(query);
     res.status(200).json({
-      message: 'Operation successful',
+      message: "Operation successful",
       vendors,
       userId,  // Send the userId back in the response
     });
   } catch (error) {
-    console.error('Error saving user or fetching vendors:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error saving user or fetching vendors:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
-
 
 
   //get data vendor
@@ -4952,6 +4957,154 @@ app.get('/filter-users', async (req, res) => {
   }
 });
 
+
+//enquiry click
+
+app.post("/enquiry-click", async (req, res) => {
+  const { userId, vendorId } = req.body;
+
+  if (!userId || !vendorId) {
+    return res.status(400).json({ message: "userId and vendorId are required" });
+  }
+
+  try {
+    const newClick = new EnquiryClick({ userId, vendorId });
+    await newClick.save();
+    res.status(201).json({ message: "Enquiry click saved successfully" });
+  } catch (error) {
+    console.error("Error saving enquiry click:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+app.get('/viewEnquiry/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    const data = await EnquiryClick.aggregate([
+      {
+        $match: { userId: new mongoose.Types.ObjectId(userId) }
+      },
+      {
+        $lookup: {
+          from: 'vendors', // ✅ collection name (lowercase plural of model name)
+          localField: 'vendorId',
+          foreignField: '_id',
+          as: 'vendorDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$vendorDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'Userinfo', // ✅ collection name (lowercase plural of model name)
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'userDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$userDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          clickedAt: 1,
+          'vendorDetails.businessName': 1,
+          'vendorDetails.contactNumber': 1,
+          'userDetails.name': 1
+        }
+      }
+    ]);
+
+    res.json({ status: 'ok', data });
+  } catch (error) {
+    console.error('Error fetching enquiry data:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.post("/getOnboardingcount", async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize time
+
+    const activeVendorCount = await Vendor.countDocuments({
+      expiryDate: { $gt: today },
+      approved: true
+    });
+
+    const totalVendorCount = await Vendor.countDocuments();
+
+    res.send({
+      status: 'ok',
+      data: {
+        totalVendors: totalVendorCount,
+        activeVendors: activeVendorCount
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching vendor counts:', error);
+    res.status(500).send({ status: 'error', message: 'Internal server error' });
+  }
+});
+
+app.post("/getEnquiryClickcount", async (req, res) => {
+  try {
+    const enquiryCount = await EnquiryClick.countDocuments();
+    res.send({ status: 'ok', data: { enquiryCount } });
+  } catch (error) {
+    console.error('Error fetching enquiry count:', error);
+    res.status(500).send({ status: 'error', message: 'Internal server error' });
+  }
+});
+
+app.post("/getUsercount", async (req, res) => {
+  try {
+    const userCount = await User.countDocuments();
+    res.send({ status: 'ok', data: { userCount } });
+  } catch (error) {
+    console.error('Error fetching user count:', error);
+    res.status(500).send({ status: 'error', message: 'Internal server error' });
+  }
+});
+ 
+
+//
+
+app.get("/enquiryClickStats", async (req, res) => {
+  try {
+    const months = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+
+    const enquiryData = await EnquiryClick.aggregate([
+      {
+        $group: {
+          _id: { $month: "$clickedAt" }, // fixed field name
+          totalEnquiries: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const enquiryStats = months.map((month, index) => {
+      const data = enquiryData.find(e => e._id === index + 1);
+      return { month, totalEnquiries: data ? data.totalEnquiries : 0 };
+    });
+
+    res.json(enquiryStats);
+  } catch (error) {
+    console.error("Error fetching enquiry stats:", error);
+    res.status(500).json({ status: "error", message: "Server Error" });
+  }
+});
 
 
 const PORT = process.env.PORT || 5000;
